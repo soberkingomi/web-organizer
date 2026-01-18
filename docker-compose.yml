@@ -3,7 +3,7 @@ services:
     build: .
     container_name: cloud-organizer
     ports:
-      - "3000:3000"
+      - "5656:3000"
     volumes:
       # 挂载配置目录，方便修改配置
       - ./config:/app/config
