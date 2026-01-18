@@ -165,6 +165,8 @@ export async function POST(request: Request) {
     const logs: ActionLog[] = [];
     
     await processSeriesFolder(client, tmdb, folderId, folderName, dryRun, logs);
+    
+    logs.push({ type: 'rename', description: `✓ 处理完成！共 ${logs.length} 条日志` });
 
     return NextResponse.json({ success: true, logs });
 

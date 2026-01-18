@@ -45,6 +45,8 @@ export async function POST(request: Request) {
 
     await clean(folderId);
     
+    logs.push(`✓ 清理完成！共发现 ${logs.length} 个垃圾项`);
+    
     return NextResponse.json({ success: true, logs });
 
   } catch (error: any) {

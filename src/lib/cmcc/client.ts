@@ -81,56 +81,60 @@ export class CmccClient {
       return { account: this.account, accountType: 1 };
   }
 
-  async post(path: string, payload: any, signPayload?: any): Promise<any> {
+  async post(path: string, payload: any, signPayload?: any, retries = 3): Promise<any> {
     const url = `${this.baseUrl}${path}`;
     
-    const now = new Date();
-    // Format YYYY-MM-DD HH:MM:SS
-    const timeStr = now.toISOString().replace(/T/, ' ').replace(/\..+/, '');
-    
-    // Random string 16 chars
-    const randomStr = Array(16).fill(0).map(() => Math.random().toString(36)[2]).join('').substring(0, 16); // Simple random
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      const now = new Date();
+      const timeStr = now.toISOString().replace(/T/, ' ').replace(/\..+/, '');
+      const randomStr = Array(16).fill(0).map(() => Math.random().toString(36)[2]).join('').substring(0, 16);
 
-    const sign = this.getSign(timeStr, randomStr, signPayload);
-    const mcloudSign = `${timeStr},${randomStr},${sign}`;
+      const sign = this.getSign(timeStr, randomStr, signPayload);
+      const mcloudSign = `${timeStr},${randomStr},${sign}`;
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json;charset=UTF-8",
-      "Authorization": this.config.authorization,
-      "Cookie": this.config.cookie,
-      "Mcloud-Sign": mcloudSign,
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36", // Matched typical UA or from config? Python usually doesn't send specific one unless defined.
-      // Wait, Python script uses: 
-      // requests.post(..., headers=headers)
-      // Headers in Python:
-      // "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" (from Python code if hardcoded, let's check view_file)
-      "Accept": "application/json, text/plain, */*",
-      ...(this.config.headers || {}) // Merge extra headers like 'x-yun-client-info'
-    };
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json;charset=UTF-8",
+        "Authorization": this.config.authorization,
+        "Cookie": this.config.cookie,
+        "Mcloud-Sign": mcloudSign,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        ...(this.config.headers || {})
+      };
 
-    console.log(`[REQ] POST ${path}`);
-    console.log(`[REQ] SignPayload:`, JSON.stringify(signPayload));
-    console.log(`[REQ] Mcloud-Sign: ${mcloudSign}`);
-    
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
+      console.log(`[REQ] POST ${path} (attempt ${attempt}/${retries})`);
+      console.log(`[REQ] SignPayload:`, JSON.stringify(signPayload));
+      console.log(`[REQ] Mcloud-Sign: ${mcloudSign}`);
+      
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(30000) // 30秒超时
+        });
 
-    console.log(`[RESP] Status: ${res.status}`);
-    
-    if (!res.ok) {
-       const txt = await res.text();
-       console.error(`[RESP] Error Body: ${txt}`);
-       throw new Error(`Request failed: ${res.status} ${res.statusText} - ${txt}`);
+        console.log(`[RESP] Status: ${res.status}`);
+        
+        if (!res.ok) {
+          const txt = await res.text();
+          console.error(`[RESP] Error Body: ${txt}`);
+          throw new Error(`Request failed: ${res.status} ${res.statusText}`);
+        }
+
+        const json = await res.json();
+        if (json.code !== "0000") {
+          console.error(`[RESP] API Error: ${JSON.stringify(json)}`);
+        }
+        return json;
+      } catch (e: any) {
+        console.error(`[REQ] Failed (attempt ${attempt}/${retries}):`, e.message);
+        if (attempt === retries) {
+          throw new Error(`Request failed after ${retries} attempts: ${e.message}`);
+        }
+        await new Promise(r => setTimeout(r, 1000 * attempt)); // 递增等待
+      }
     }
-
-    const json = await res.json();
-    if (json.code !== "0000") {
-        console.error(`[RESP] API Error: ${JSON.stringify(json)}`);
-    }
-    return json;
   }
 
   async listDir(fileId: string): Promise<DirEntry[]> {

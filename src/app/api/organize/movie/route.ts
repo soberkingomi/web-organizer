@@ -70,6 +70,8 @@ export async function POST(request: Request) {
         }
     }
 
+    logs.push({ type: 'rename', description: `✓ 处理完成！共 ${logs.length} 条日志` });
+
     return NextResponse.json({ success: true, logs });
 
   } catch (error: any) {
