@@ -1,0 +1,13 @@
+services:
+  web-organizer:
+    build: .
+    container_name: cloud-organizer
+    ports:
+      - "3000:3000"
+    volumes:
+      # 挂载配置目录，方便修改配置
+      - ./config:/app/config
+    environment:
+      - NODE_ENV=production
+      - CONFIG_PATH=/app/config/cmcc_config.json
+    restart: unless-stopped
