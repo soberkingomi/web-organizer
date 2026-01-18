@@ -291,7 +291,8 @@ export function FileBrowser({ config, onLogout }: Props) {
               color: currentPath.length === 1 ? 'var(--text-primary)' : 'var(--accent)',
               fontWeight: currentPath.length === 1 ? 600 : 500,
               cursor: 'pointer',
-              padding: '0.25rem 0'
+              padding: '0.25rem 0',
+              marginLeft: '0.5rem'
             }}
           >
             全部
@@ -415,7 +416,7 @@ export function FileBrowser({ config, onLogout }: Props) {
                   </div>
 
                   {/* Name & Meta */}
-                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ 
                       fontWeight: f.is_dir ? 500 : 400,
                       fontSize: '1rem',
@@ -423,7 +424,8 @@ export function FileBrowser({ config, onLogout }: Props) {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
-                      lineHeight: '1.3'
+                      lineHeight: '1.3',
+                      width: '100%'
                     }}>
                       {f.name}
                     </div>
@@ -432,9 +434,9 @@ export function FileBrowser({ config, onLogout }: Props) {
                       color: 'var(--text-muted)',
                       display: 'flex',
                       gap: '0.75rem',
-                      marginTop: '0.15rem'
+                      marginTop: '0.15rem',
+                      width: '100%'
                     }}>
-                      <span>{f.updated_at?.split(' ')[0]}</span>
                       {!f.is_dir && <span>{formatSize(f.size)}</span>}
                     </div>
                   </div>
