@@ -1,15 +1,89 @@
 import { NextResponse } from 'next/server';
 import { CmccClient, DirEntry } from '@/lib/cmcc/client';
 import { TMDBClient } from '@/lib/tmdb/client';
-import { cleanSeriesQuery, extractQualityTags, parseEpisodeFromName, VIDEO_EXTS, SUB_EXTS } from '@/lib/parsers';
+import { cleanSeriesQuery, extractQualityTags, parseEpisodeFromName, parseSeasonFromText, VIDEO_EXTS, SUB_EXTS, MISC_DIR_NAMES, JUNK_MARKERS } from '@/lib/parsers';
 
-// Helper to simulate "UndoLogger" / Action Recorder
 export interface ActionLog {
-    type: 'rename' | 'move' | 'mkdir' | 'clean';
+    type: 'rename' | 'move' | 'mkdir' | 'clean' | 'skip' | 'info';
     description: string;
-    details?: any;
 }
 
+// 剧集元数据
+interface SeriesMeta {
+    name: string;
+    year: number | null;
+    tvId: number;
+}
+
+// 识别剧集信息
+async function resolveSeries(
+    tmdb: TMDBClient | null,
+    folderName: string
+): Promise<SeriesMeta | null> {
+    let meta: SeriesMeta = { name: folderName, year: null, tvId: 0 };
+    
+    // 显式 ID 检查 {tmdb-xxx}
+    const mId = folderName.match(/[\{\[]tmdb-(\d+)[\}\]]/i);
+    if (mId) {
+        meta.tvId = parseInt(mId[1]);
+        meta.name = cleanSeriesQuery(folderName.replace(mId[0], ""));
+        if (tmdb) {
+            try {
+                const details = await tmdb.tvDetails(meta.tvId);
+                if (details.name) {
+                    meta.name = details.name;
+                    if (details.first_air_date) meta.year = parseInt(details.first_air_date.substring(0, 4));
+                }
+            } catch (e) {}
+        }
+    } else if (tmdb) {
+        const key = cleanSeriesQuery(folderName);
+        const results = await tmdb.searchTv(key);
+        if (results && results.length > 0) {
+            const best = results[0];
+            meta.tvId = best.id;
+            meta.name = best.name;
+            if (best.first_air_date) meta.year = parseInt(best.first_air_date.substring(0, 4));
+        }
+    }
+    
+    return meta;
+}
+
+// 清理垃圾文件
+async function removeJunkFiles(
+    client: CmccClient,
+    entries: DirEntry[],
+    dryRun: boolean,
+    logs: ActionLog[]
+): Promise<DirEntry[]> {
+    const toRemove: string[] = [];
+    const clean: DirEntry[] = [];
+    
+    for (const e of entries) {
+        let isJunk = false;
+        if (e.is_dir) {
+            if (MISC_DIR_NAMES.has(e.name.toLowerCase())) isJunk = true;
+        } else {
+            if (JUNK_MARKERS.some(m => e.name.toLowerCase().includes(m.toLowerCase()))) isJunk = true;
+        }
+        
+        if (isJunk) {
+            toRemove.push(e.file_id);
+            logs.push({ type: 'clean', description: `${dryRun ? '[DRY] ' : ''}Remove junk: ${e.name}` });
+        } else {
+            clean.push(e);
+        }
+    }
+    
+    if (toRemove.length > 0 && !dryRun) {
+        await client.remove(toRemove);
+    }
+    
+    return clean;
+}
+
+// 处理单个剧集文件夹
 async function processSeriesFolder(
     client: CmccClient, 
     tmdb: TMDBClient | null, 
@@ -18,141 +92,148 @@ async function processSeriesFolder(
     dryRun: boolean,
     logs: ActionLog[]
 ) {
-    logs.push({ type: 'rename', description: `Processing Series Folder: ${folderName}` });
+    logs.push({ type: 'info', description: `处理剧集: ${folderName}` });
 
-    // 1. Resolve Series
-    let meta = { name: folderName, year: null as number | null, tmdbId: 0 };
-    
-    // Explicit ID check {tmdb-xxx}
-    const mId = folderName.match(/[\{\[]tmdb-(\d+)[\}\]]/i);
-    if (mId) {
-        meta.tmdbId = parseInt(mId[1]);
-        const cleanName = cleanSeriesQuery(folderName.replace(mId[0], ""));
-        meta.name = cleanName;
-        // Try fetch details if TMDB available
-        if (tmdb) {
-            try {
-                const details = await tmdb.tvDetails(meta.tmdbId);
-                if (details.name) {
-                    meta.name = details.name;
-                    if (details.first_air_date) meta.year = parseInt(details.first_air_date.substring(0, 4));
-                }
-            } catch (e) {}
-        }
-    } else if (tmdb) {
-        // Search
-        const key = cleanSeriesQuery(folderName);
-        const results = await tmdb.searchTv(key);
-        if (results && results.length > 0) {
-            const best = results[0];
-            meta.tmdbId = best.id;
-            meta.name = best.name;
-            if (best.first_air_date) meta.year = parseInt(best.first_air_date.substring(0, 4));
-        }
+    // 1. 识别剧集
+    const meta = await resolveSeries(tmdb, folderName);
+    if (!meta) {
+        logs.push({ type: 'skip', description: `跳过未识别剧集: ${folderName}` });
+        return;
     }
+
+    const folderNewName = (meta.year && meta.tvId) 
+        ? `${meta.name} (${meta.year}) [TMDB-${meta.tvId}]` 
+        : meta.name;
+    const seriesFilePrefix = meta.name;
     
-    // 2. Rename Folder
-    let newFolderName = meta.name;
-    if (meta.year && meta.tmdbId) {
-        newFolderName = `${meta.name} (${meta.year}) [TMDB-${meta.tmdbId}]`;
-    }
-    
-    if (newFolderName !== folderName) {
+    logs.push({ type: 'info', description: `识别为: ${folderNewName}` });
+
+    // 2. 重命名剧集主文件夹
+    if (meta.name && folderName !== folderNewName) {
         if (dryRun) {
-            logs.push({ type: 'rename', description: `[DRY] Rename Folder: ${folderName} -> ${newFolderName}` });
+            logs.push({ type: 'rename', description: `[DRY] 重命名文件夹: ${folderName} -> ${folderNewName}` });
         } else {
-             // We can't actually update the "current" folder name easily if we are *inside* it without parent ID
-             // The API requires fileId.
-             await client.rename(folderId, newFolderName);
-             logs.push({ type: 'rename', description: `Renamed Folder: ${newFolderName}` });
+            await client.rename(folderId, folderNewName);
+            logs.push({ type: 'rename', description: `重命名文件夹: ${folderNewName}` });
         }
     }
 
-    // 3. List Content
-    const entries = await client.listDir(folderId);
+    // 3. 列出目录内容
+    let entries = await client.listDir(folderId);
+    
+    // 清理垃圾文件
+    entries = await removeJunkFiles(client, entries, dryRun, logs);
+    
+    // 映射季信息: season_num -> file_id
     const seasonMap = new Map<number, string>();
     const filesToProcess: DirEntry[] = [];
 
-    // Parse existing folders
     for (const e of entries) {
         if (e.is_dir) {
-            // Check for Sxx
-            const mParams = e.name.match(/^S(\d{1,2})$/i);
-            if (mParams) {
-                const s = parseInt(mParams[1]);
+            const s = parseSeasonFromText(e.name);
+            if (s !== null) {
                 seasonMap.set(s, e.file_id);
-                // Standardize S1 -> S01
-                const std = `S${s.toString().padStart(2, '0')}`;
-                if (e.name !== std) {
-                     if (dryRun) logs.push({type:'rename', description: `[DRY] Rename Season: ${e.name} -> ${std}`});
-                     else await client.rename(e.file_id, std);
-                }
-            } else {
-                // Try fuzzy parse "Season 1"
-                const mSeason = e.name.match(/(?:^|[^a-zA-Z])S(\d{1,2})(?:\D|$)/i) || e.name.match(/Season\s*(\d+)/i) || e.name.match(/第\s*(\d+)\s*[季部]/);
-                if (mSeason) {
-                    const s = parseInt(mSeason[1]); // Note: "第x季" chinese handling simplified here for now (assuming digits)
-                    // We only handle digits for web V1 to be safe, complex chinese numerals porting skipped for brevity unless critical
-                    if (!seasonMap.has(s)) {
-                        seasonMap.set(s, e.file_id);
-                        const std = `S${s.toString().padStart(2, '0')}`;
-                        if (dryRun) logs.push({type:'rename', description: `[DRY] Rename Season: ${e.name} -> ${std}`});
-                        else await client.rename(e.file_id, std);
+                // 规范化季文件夹名为 Sxx
+                const stdName = `S${s.toString().padStart(2, '0')}`;
+                if (e.name !== stdName) {
+                    if (dryRun) {
+                        logs.push({ type: 'rename', description: `[DRY] 重命名季: ${e.name} -> ${stdName}` });
+                    } else {
+                        await client.rename(e.file_id, stdName);
+                        logs.push({ type: 'rename', description: `重命名季: ${stdName}` });
                     }
                 }
             }
         } else {
             const ext = e.name.substring(e.name.lastIndexOf('.')).toLowerCase();
-             if (VIDEO_EXTS.has(ext) || SUB_EXTS.has(ext)) {
-                 filesToProcess.push(e);
-             }
+            if (VIDEO_EXTS.has(ext) || SUB_EXTS.has(ext)) {
+                filesToProcess.push(e);
+            }
         }
     }
 
-    // 4. Process Files
+    // 4. 处理根目录下的视频/字幕文件 (移动到季目录 & 重命名)
     for (const f of filesToProcess) {
-        const { season, episode } = parseEpisodeFromName(f.name);
-        const s = season || 1; 
-        if (episode === null) continue;
+        let { season, episode } = parseEpisodeFromName(f.name);
+        if (season === null) season = 1; // 默认为第 1 季
+        if (episode === null) continue; // 无法识别集号则跳过
 
-        // Ensure Season Folder
-        let sid = seasonMap.get(s);
-        const sName = `S${s.toString().padStart(2, '0')}`;
-
+        // 确保季目录存在
+        let sid = seasonMap.get(season);
+        const sName = `S${season.toString().padStart(2, '0')}`;
+        
         if (!sid) {
             if (dryRun) {
-                 logs.push({type:'mkdir', description: `[DRY] Mkdir ${sName}`});
-                 sid = "dry_run_id_" + s;
+                logs.push({ type: 'mkdir', description: `[DRY] 创建目录 ${sName}` });
+                sid = "dry_run_id";
             } else {
-                 sid = await client.mkdir(folderId, sName) as string; // Wait check mkdir return type compatibility
-                 // Actually CmccClient.mkdir needs return string.
-                 // Checking client.ts... I haven't implemented mkdir yet! 
-                 // WAIT. I missed implementing mkdir, rename, move in client.ts.
-                 // I implemented listDir and rename... wait let me check client.ts
+                sid = await client.mkdir(folderId, sName);
+                logs.push({ type: 'mkdir', description: `创建目录 ${sName}` });
             }
-            seasonMap.set(s, sid!);
-        }
-        
-        // Move
-        if (f.parent_file_id !== sid) {
-             if (dryRun) logs.push({type:'move', description: `[DRY] Move ${f.name} -> ${sName}/`});
-             else await client.move([f.file_id], sid!); // client.ts needs move
+            seasonMap.set(season, sid);
         }
 
-        // Rename
-        const tagStr = extractQualityTags(f.name);
-        const ext = f.name.substring(f.name.lastIndexOf('.'));
-        const newName = tagStr 
-            ? `${meta.name} - S${s.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')} - ${tagStr}${ext}`
-            : `${meta.name} - S${s.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}${ext}`;
+        // 移动文件
+        if (f.parent_file_id !== sid && sid !== "dry_run_id") {
+            if (dryRun) {
+                logs.push({ type: 'move', description: `[DRY] 移动 ${f.name} -> ${sName}/` });
+            } else {
+                await client.move([f.file_id], sid);
+                logs.push({ type: 'move', description: `移动 ${f.name} -> ${sName}/` });
+            }
+        }
         
+        // 重命名文件
+        const ext = f.name.substring(f.name.lastIndexOf('.'));
+        const tagStr = extractQualityTags(f.name);
+        const newName = tagStr 
+            ? `${seriesFilePrefix} - S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')} - ${tagStr}${ext}`
+            : `${seriesFilePrefix} - S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}${ext}`;
+
         if (f.name !== newName) {
-            if (dryRun) logs.push({type:'rename', description: `[DRY] Rename File: ${f.name} -> ${newName}`});
-            else await client.rename(f.file_id, newName);
+            if (dryRun) {
+                logs.push({ type: 'rename', description: `[DRY] 重命名: ${f.name} -> ${newName}` });
+            } else {
+                await client.rename(f.file_id, newName);
+                logs.push({ type: 'rename', description: `重命名: ${newName}` });
+            }
+        }
+    }
+
+    // 5. 递归处理已存在的季文件夹内容
+    for (const [s, sid] of seasonMap.entries()) {
+        if (dryRun && sid === "dry_run_id") continue;
+        
+        const seasonFiles = await client.listDir(sid);
+        for (const f of seasonFiles) {
+            if (f.is_dir) continue;
+            
+            const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+            if (!VIDEO_EXTS.has(ext) && !SUB_EXTS.has(ext)) continue;
+            
+            let { season: sEp, episode: ep } = parseEpisodeFromName(f.name);
+            if (ep === null) continue;
+            
+            // 如果文件名中无季号，则继承当前文件夹的季号
+            if (sEp === null) sEp = s;
+            
+            const fileExt = f.name.substring(f.name.lastIndexOf('.'));
+            const tagStr = extractQualityTags(f.name);
+            const newName = tagStr 
+                ? `${seriesFilePrefix} - S${sEp.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')} - ${tagStr}${fileExt}`
+                : `${seriesFilePrefix} - S${sEp.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')}${fileExt}`;
+            
+            if (f.name !== newName) {
+                if (dryRun) {
+                    logs.push({ type: 'rename', description: `[DRY] 重命名 (S${s.toString().padStart(2, '0')}内): ${f.name} -> ${newName}` });
+                } else {
+                    await client.rename(f.file_id, newName);
+                    logs.push({ type: 'rename', description: `重命名 (S${s.toString().padStart(2, '0')}内): ${newName}` });
+                }
+            }
         }
     }
 }
-
 
 export async function POST(request: Request) {
   try {
@@ -166,7 +247,7 @@ export async function POST(request: Request) {
     
     await processSeriesFolder(client, tmdb, folderId, folderName, dryRun, logs);
     
-    logs.push({ type: 'rename', description: `✓ 处理完成！共 ${logs.length} 条日志` });
+    logs.push({ type: 'info', description: `✓ 处理完成！共 ${logs.length} 条日志` });
 
     return NextResponse.json({ success: true, logs });
 

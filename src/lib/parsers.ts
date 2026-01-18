@@ -3,6 +3,12 @@
 export const VIDEO_EXTS = new Set([".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".m4v", ".ts", ".m2ts", ".webm", ".rmvb", ".iso"]);
 export const SUB_EXTS = new Set([".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx", ".sup"]);
 
+// 特殊目录名集合（杂项、元数据目录）
+export const MISC_DIR_NAMES = new Set(["@eadir", "__macosx", ".ds_store", "sample", "samples", "screens", "screen", "screenshots", "extras", "extra", "bonus", "bts", "poster", "posters", "fanart", "thumb", "thumbs", "artwork", "cd1", "cd2", "subs", "sub", "subtitle", "subtitles", "字幕", "字幕组"]);
+
+// 垃圾文件名标记
+export const JUNK_MARKERS = ["www.", ".com", ".net", ".org", "dygm", "dygod", "ygdy8", "piaohua", "迅雷", "下载", "资源", "首发", ".pdf", ".txt", "免费", "搜索"];
+
 const SXXEYY_RE = /S(\d{1,2})\s*E(\d{1,3})/i;
 const EP_NUM_RE = /\b(?:EP|E)(\d{1,3})\b/i;
 const YEAR_REGEX = /(?:^|[\.\s\(\[])(19\d{2}|20\d{2})(?:$|[\.\s\)\]])/;
@@ -113,4 +119,44 @@ export function extractQualityTags(filename: string): string {
     else if (lower.includes("720p")) tags.push("720p");
     
     return tags.join(" - ");
+}
+
+/**
+ * 从文本中解析季号
+ * 支持: S01, Season 1, 第1季, 第一季 等格式
+ */
+export function parseSeasonFromText(text: string): number | null {
+    // S01, S1
+    const m1 = text.match(/^S(\d{1,2})$/i);
+    if (m1) return parseInt(m1[1]);
+    
+    // Season 1, Season1
+    const m2 = text.match(/Season\s*(\d+)/i);
+    if (m2) return parseInt(m2[1]);
+    
+    // 第1季, 第一季
+    const m3 = text.match(/第\s*(\d+)\s*[季部]/);
+    if (m3) return parseInt(m3[1]);
+    
+    // 中文数字: 第一季 ~ 第十季
+    const cnMap: Record<string, number> = {
+        '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+        '六': 6, '七': 7, '八': 8, '九': 9, '十': 10
+    };
+    const m4 = text.match(/第([一二三四五六七八九十]+)[季部]/);
+    if (m4) {
+        const cn = m4[1];
+        if (cn === '十') return 10;
+        if (cn.length === 1) return cnMap[cn] || null;
+        // 十一 ~ 十九
+        if (cn.startsWith('十') && cn.length === 2) {
+            return 10 + (cnMap[cn[1]] || 0);
+        }
+    }
+    
+    // 包含 S01 的其他格式
+    const m5 = text.match(/S(\d{1,2})(?:\D|$)/i);
+    if (m5) return parseInt(m5[1]);
+    
+    return null;
 }
