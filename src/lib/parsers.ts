@@ -131,7 +131,7 @@ export function extractQualityTags(filename: string): string {
 
 /**
  * 从文本中解析季号
- * 支持: S01, Season 1, 第1季, 第一季 等格式
+ * 支持: S01, Season 1, 第1季, 第一季, 剧名1（2004）等格式
  */
 export function parseSeasonFromText(text: string): number | null {
     // S01, S1
@@ -165,6 +165,15 @@ export function parseSeasonFromText(text: string): number | null {
     // 包含 S01 的其他格式
     const m5 = text.match(/S(\d{1,2})(?:\D|$)/i);
     if (m5) return parseInt(m5[1]);
+    
+    // 剧名1（2004）、剧名2（2006）这种格式 - 提取剧名后面的数字
+    // 匹配: 中文/英文名 + 数字 + 可选的（年份）
+    const m6 = text.match(/[\u4e00-\u9fa5a-zA-Z]+(\d{1,2})(?:\s*[\(（]\d{4}[\)）])?$/);
+    if (m6) return parseInt(m6[1]);
+    
+    // 剧名 1、剧名 2 (带空格)
+    const m7 = text.match(/\s(\d{1,2})(?:\s*[\(（]\d{4}[\)）])?$/);
+    if (m7) return parseInt(m7[1]);
     
     return null;
 }
