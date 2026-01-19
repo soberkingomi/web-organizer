@@ -166,9 +166,9 @@ export function FileBrowser({ config, onLogout }: Props) {
         gap: '1rem'
       }}>
         {/* 左侧: Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <img src="/logo.png" alt="Logo" style={{ width: '38px', height: '38px', flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, fontSize: '1.2rem', color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>云盘助手</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Cloud size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-primary)' }}>云盘助手</span>
         </div>
 
         {/* 右侧: 试运行 + 设置 */}
