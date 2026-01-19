@@ -226,31 +226,53 @@ export function FileBrowser({ config, onLogout }: Props) {
         display: 'flex', 
         gap: '0.75rem', 
         flexWrap: 'wrap',
+        alignItems: 'center',
         borderBottom: '1px solid var(--border)',
         background: 'var(--bg-surface)'
       }}>
-        <button onClick={() => runAction('series')} disabled={processing} className="btn btn-secondary">
-          <Tv size={16} /> <span className="mobile-hide">剧集</span>
-        </button>
-        <button onClick={() => runAction('movie')} disabled={processing} className="btn btn-secondary">
-          <Film size={16} /> <span className="mobile-hide">电影</span>
-        </button>
-        <button onClick={() => runAction('clean')} disabled={processing} className="btn btn-secondary">
-          <Trash2 size={16} /> <span className="mobile-hide">清理</span>
-        </button>
+        {/* 整理操作按钮组 - 圆角卡片风格 */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '2px',
+          background: 'var(--bg-elevated)',
+          borderRadius: '8px',
+          padding: '2px',
+          border: '1px solid var(--border)'
+        }}>
+          <button onClick={() => runAction('series')} disabled={processing} className="btn-tool" title="剧集整理">
+            <Tv size={16} />
+          </button>
+          <button onClick={() => runAction('movie')} disabled={processing} className="btn-tool" title="电影整理">
+            <Film size={16} />
+          </button>
+          <button onClick={() => runAction('clean')} disabled={processing} className="btn-tool" title="清理垃圾">
+            <Trash2 size={16} />
+          </button>
+        </div>
         
-        {/* 多选按钮 */}
+        {/* 选择操作 */}
         {!selectMode && selectedItems.size === 0 ? (
           <button 
             onClick={() => setSelectMode(true)}
-            className="btn btn-secondary"
-            title="多选"
+            className="btn-tool"
+            style={{ 
+              background: 'var(--bg-elevated)', 
+              border: '1px solid var(--border)',
+              borderRadius: '8px',
+              padding: '0.5rem 0.75rem'
+            }}
           >
-            <Check size={16} /> <span className="mobile-hide">多选</span>
+            <Check size={16} /> 多选
           </button>
         ) : (
-          <>
-            {/* 全选/取消全选 */}
+          <div style={{ 
+            display: 'flex', 
+            gap: '2px',
+            background: 'var(--bg-elevated)',
+            borderRadius: '8px',
+            padding: '2px',
+            border: '1px solid var(--border)'
+          }}>
             <button 
               onClick={() => {
                 if (selectedItems.size === files.length) {
@@ -259,25 +281,24 @@ export function FileBrowser({ config, onLogout }: Props) {
                   setSelectedItems(new Set(files.map(f => f.file_id)));
                 }
               }}
-              className="btn btn-secondary"
-              title={selectedItems.size === files.length ? "取消全选" : "全选"}
+              className="btn-tool"
             >
-              {selectedItems.size === files.length ? "取消全选" : "全选"}
+              {selectedItems.size === files.length ? "取消" : "全选"}
             </button>
             
             <button 
               onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
-              className="btn btn-secondary"
+              className="btn-tool"
               style={{ color: 'var(--accent)' }}
             >
-              取消 {selectedItems.size > 0 && `(${selectedItems.size})`}
+              完成 {selectedItems.size > 0 && `(${selectedItems.size})`}
             </button>
-          </>
+          </div>
         )}
         
         {processing && (
-          <button onClick={stopProcessing} className="btn" style={{ background: 'var(--error)', color: 'white' }}>
-            <Square size={16} /> 停止
+          <button onClick={stopProcessing} className="btn-tool" style={{ background: 'var(--error)', color: 'white', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+            <Square size={14} /> 停止
           </button>
         )}
         
@@ -286,8 +307,9 @@ export function FileBrowser({ config, onLogout }: Props) {
         <button 
           onClick={() => fetchFiles(currentFolder.id)} 
           disabled={loading} 
-          className="btn btn-ghost btn-icon"
+          className="btn-tool"
           title="刷新"
+          style={{ padding: '0.5rem' }}
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </button>
