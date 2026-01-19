@@ -102,7 +102,15 @@ export function parseEpisodeFromName(name: string): { season: number | null, epi
     const m3 = stem.match(EP_NUM_RE);
     if (m3) return { season: null, episode: parseInt(m3[1]) };
     
-    // Just digits
+    // -01, _01, .01, 【xx】name-01 等格式
+    const m4 = stem.match(/[-_.](\d{1,3})$/);
+    if (m4) return { season: null, episode: parseInt(m4[1]) };
+    
+    // 文件名末尾的数字，如 "xxx 01" 或 "xxx01"
+    const m5 = stem.match(/[\s\-_](\d{1,3})$/);
+    if (m5) return { season: null, episode: parseInt(m5[1]) };
+    
+    // Just digits (纯数字文件名)
     if (/^\d{1,3}$/.test(stem.trim())) {
         return { season: null, episode: parseInt(stem) };
     }

@@ -211,17 +211,16 @@ async function processSeriesFolder(
             const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
             if (!VIDEO_EXTS.has(ext) && !SUB_EXTS.has(ext)) continue;
             
-            let { season: sEp, episode: ep } = parseEpisodeFromName(f.name);
+            // 只从文件名提取集数，季号以文件夹为准
+            const { episode: ep } = parseEpisodeFromName(f.name);
             if (ep === null) continue;
             
-            // 如果文件名中无季号，则继承当前文件夹的季号
-            if (sEp === null) sEp = s;
-            
+            // 季号直接使用文件夹的季号 s，忽略文件名中的季信息
             const fileExt = f.name.substring(f.name.lastIndexOf('.'));
             const tagStr = extractQualityTags(f.name);
             const newName = tagStr 
-                ? `${seriesFilePrefix} - S${sEp.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')} - ${tagStr}${fileExt}`
-                : `${seriesFilePrefix} - S${sEp.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')}${fileExt}`;
+                ? `${seriesFilePrefix} - S${s.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')} - ${tagStr}${fileExt}`
+                : `${seriesFilePrefix} - S${s.toString().padStart(2, '0')}E${ep.toString().padStart(2, '0')}${fileExt}`;
             
             if (f.name !== newName) {
                 if (dryRun) {
