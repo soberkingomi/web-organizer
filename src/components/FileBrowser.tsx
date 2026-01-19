@@ -249,13 +249,30 @@ export function FileBrowser({ config, onLogout }: Props) {
             <Check size={16} /> <span className="mobile-hide">多选</span>
           </button>
         ) : (
-          <button 
-            onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
-            className="btn btn-secondary"
-            style={{ color: 'var(--accent)' }}
-          >
-            取消 {selectedItems.size > 0 && `(${selectedItems.size})`}
-          </button>
+          <>
+            {/* 全选/取消全选 */}
+            <button 
+              onClick={() => {
+                if (selectedItems.size === files.length) {
+                  setSelectedItems(new Set());
+                } else {
+                  setSelectedItems(new Set(files.map(f => f.file_id)));
+                }
+              }}
+              className="btn btn-secondary"
+              title={selectedItems.size === files.length ? "取消全选" : "全选"}
+            >
+              {selectedItems.size === files.length ? "取消全选" : "全选"}
+            </button>
+            
+            <button 
+              onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
+              className="btn btn-secondary"
+              style={{ color: 'var(--accent)' }}
+            >
+              取消 {selectedItems.size > 0 && `(${selectedItems.size})`}
+            </button>
+          </>
         )}
         
         {processing && (
