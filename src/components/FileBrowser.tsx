@@ -3,9 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Folder, FileText, ChevronRight, LogOut, Tv, Film, Trash2, 
-  RefreshCw, X, Terminal, Square, MoreHorizontal, Check, Cloud
+  RefreshCw, X, Terminal, Square, Check, Cloud, Settings, Sun, Moon
 } from 'lucide-react';
-import { ThemeSwitcher } from './ThemeSwitcher';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Props {
   config: any;
@@ -35,8 +35,11 @@ export function FileBrowser({ config, onLogout }: Props) {
   const [processing, setProcessing] = useState(false);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [dryRun, setDryRun] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  
+  const { theme, setTheme } = useTheme();
 
   const currentFolder = currentPath[currentPath.length - 1];
 
@@ -153,126 +156,195 @@ export function FileBrowser({ config, onLogout }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-base)' }}>
-      {/* Header - Logo & Tools */}
+      {/* Header - Logo & Settings */}
       <header style={{ 
-        padding: '0.75rem 1.5rem', 
+        padding: '0.75rem 1.25rem', 
         background: 'var(--bg-surface)', 
-        borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '1rem'
       }}>
-        {/* Logo */}
+        {/* 左侧: Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Cloud size={24} style={{ color: 'var(--text-primary)' }} />
-          <span style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-primary)' }}>云盘助手</span>
+          <Cloud size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-primary)' }}>云盘助手</span>
         </div>
 
-        {/* Header Actions */}
+        {/* 右侧: 试运行 + 设置 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {/* 试运行开关 */}
           <div 
             onClick={() => setDryRun(!dryRun)}
+            title={dryRun ? "当前为试运行模式，不会修改文件" : "注意：当前为执行模式，将直接修改文件"}
             style={{ 
               display: 'flex', 
               alignItems: 'center', 
-              gap: '0.5rem', 
+              gap: '0.6rem', 
               cursor: 'pointer',
-              padding: '0.35rem 0.75rem',
-              borderRadius: 'var(--radius-md)',
-              background: dryRun ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-hover)',
-              border: `1px solid ${dryRun ? 'rgba(34, 197, 94, 0.3)' : 'var(--border)'}`,
-              transition: 'all 0.2s ease'
+              padding: '0.4rem 0.6rem',
+              borderRadius: 'var(--radius-sm)',
+              background: 'transparent',
+              transition: 'all 0.15s ease'
             }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
-            <div style={{
-              width: '32px',
-              height: '18px',
-              borderRadius: '9px',
-              background: dryRun ? '#22c55e' : 'var(--text-muted)',
-              position: 'relative',
-              transition: 'background 0.2s ease'
+            <span style={{ 
+              fontSize: '0.9rem', 
+              color: dryRun ? 'var(--text-primary)' : 'var(--text-muted)', 
+              fontWeight: 500,
+              transition: 'color 0.2s'
             }}>
-              <div style={{
-                width: '14px',
-                height: '14px',
-                borderRadius: '50%',
-                background: 'white',
-                position: 'absolute',
-                top: '2px',
-                left: dryRun ? '16px' : '2px',
-                transition: 'left 0.2s ease',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
-              }} />
-            </div>
-            <span style={{ fontSize: '0.85rem', color: dryRun ? '#22c55e' : 'var(--text-secondary)', fontWeight: 500 }}>
               试运行
             </span>
+            <div style={{
+              width: '36px',
+              height: '20px',
+              borderRadius: '12px',
+              background: dryRun ? 'var(--accent)' : 'var(--bg-elevated)',
+              border: `1px solid ${dryRun ? 'var(--accent)' : 'var(--border)'}`,
+              position: 'relative',
+              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              boxShadow: dryRun ? '0 2px 4px rgba(0,0,0,0.1)' : 'inset 0 1px 2px rgba(0,0,0,0.05)'
+            }}>
+              <div style={{
+                width: '16px',
+                height: '16px',
+                borderRadius: '50%',
+                background: '#fff',
+                position: 'absolute',
+                top: '1px',
+                left: dryRun ? '17px' : '1px',
+                transition: 'left 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
+              }} />
+            </div>
           </div>
-          <ThemeSwitcher />
-          <button onClick={() => setShowLogs(!showLogs)} className="btn btn-ghost btn-icon" title="日志">
+          
+          <button onClick={() => setShowLogs(!showLogs)} className="btn-icon-sm" title="日志">
             <Terminal size={18} />
           </button>
-          <button onClick={onLogout} className="btn btn-ghost btn-icon" title="登出">
-            <LogOut size={18} />
-          </button>
+          
+          {/* 设置按钮 */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowSettings(!showSettings)} className="btn-icon-sm" title="设置">
+              <Settings size={18} />
+            </button>
+            
+            {/* 设置下拉菜单 */}
+            {showSettings && (
+              <>
+                <div 
+                  style={{ position: 'fixed', inset: 0, zIndex: 99 }} 
+                  onClick={() => setShowSettings(false)} 
+                />
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  right: 0,
+                  marginTop: '0.5rem',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  borderRadius: '10px',
+                  boxShadow: 'var(--shadow-lg)',
+                  minWidth: '130px',
+                  zIndex: 100,
+                  overflow: 'hidden',
+                  padding: '0.25rem'
+                }}>
+                  {/* 主题切换 */}
+                  <button
+                    onClick={() => {
+                      if (theme === 'dark') setTheme('light');
+                      else if (theme === 'light') setTheme('system');
+                      else setTheme('dark');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.6rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: 'var(--text-primary)',
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
+                    {theme === 'dark' ? '暗色模式' : theme === 'light' ? '亮色模式' : '跟随系统'}
+                  </button>
+                  
+                  <div style={{ height: '1px', background: 'var(--border)', margin: '0.2rem 0.5rem' }} />
+                  
+                  {/* 登出 */}
+                  <button
+                    onClick={() => { setShowSettings(false); onLogout(); }}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem 0.6rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem',
+                      background: 'transparent',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: 'var(--error)',
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      textAlign: 'left'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <LogOut size={18} />
+                    退出登录
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
-      {/* Toolbar */}
+      {/* 工具栏 - 功能按钮 + 选择按钮 */}
       <div style={{ 
-        padding: '0.75rem 1.5rem', 
+        padding: '0.6rem 1.25rem', 
         display: 'flex', 
-        gap: '0.75rem', 
-        flexWrap: 'wrap',
         alignItems: 'center',
+        gap: '0.75rem',
         borderBottom: '1px solid var(--border)',
         background: 'var(--bg-surface)'
       }}>
-        {/* 整理操作按钮组 - 圆角卡片风格 */}
-        <div style={{ 
-          display: 'flex', 
-          gap: '2px',
-          background: 'var(--bg-elevated)',
-          borderRadius: '8px',
-          padding: '2px',
-          border: '1px solid var(--border)'
-        }}>
-          <button onClick={() => runAction('series')} disabled={processing} className="btn-tool" title="剧集整理">
-            <Tv size={16} />
+        {/* 功能按钮 */}
+        <div style={{ display: 'flex', gap: '0.35rem' }}>
+          <button onClick={() => runAction('series')} disabled={processing} className="btn-action" title="剧集整理">
+            <Tv size={18} />
           </button>
-          <button onClick={() => runAction('movie')} disabled={processing} className="btn-tool" title="电影整理">
-            <Film size={16} />
+          <button onClick={() => runAction('movie')} disabled={processing} className="btn-action" title="电影整理">
+            <Film size={18} />
           </button>
-          <button onClick={() => runAction('clean')} disabled={processing} className="btn-tool" title="清理垃圾">
-            <Trash2 size={16} />
+          <button onClick={() => runAction('clean')} disabled={processing} className="btn-action" title="清理垃圾">
+            <Trash2 size={18} />
           </button>
         </div>
         
-        {/* 选择操作 */}
+        {/* 分隔线 */}
+        <div style={{ width: '1px', height: '24px', background: 'var(--border)' }} />
+        
+        {/* 选择按钮 */}
         {!selectMode && selectedItems.size === 0 ? (
-          <button 
-            onClick={() => setSelectMode(true)}
-            className="btn-tool"
-            style={{ 
-              background: 'var(--bg-elevated)', 
-              border: '1px solid var(--border)',
-              borderRadius: '8px',
-              padding: '0.5rem 0.75rem'
-            }}
-          >
-            <Check size={16} /> 多选
+          <button onClick={() => setSelectMode(true)} className="btn-text" style={{ fontSize: '0.9rem' }}>
+            <Check size={16} /> 选择
           </button>
         ) : (
-          <div style={{ 
-            display: 'flex', 
-            gap: '2px',
-            background: 'var(--bg-elevated)',
-            borderRadius: '8px',
-            padding: '2px',
-            border: '1px solid var(--border)'
-          }}>
+          <div style={{ display: 'flex', gap: '0.35rem' }}>
             <button 
               onClick={() => {
                 if (selectedItems.size === files.length) {
@@ -281,15 +353,15 @@ export function FileBrowser({ config, onLogout }: Props) {
                   setSelectedItems(new Set(files.map(f => f.file_id)));
                 }
               }}
-              className="btn-tool"
+              className="btn-text"
+              style={{ fontSize: '0.9rem' }}
             >
-              {selectedItems.size === files.length ? "取消" : "全选"}
+              {selectedItems.size === files.length ? "取消全选" : "全选"}
             </button>
-            
             <button 
               onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
-              className="btn-tool"
-              style={{ color: 'var(--accent)' }}
+              className="btn-text"
+              style={{ color: 'var(--accent)', fontSize: '0.9rem' }}
             >
               完成 {selectedItems.size > 0 && `(${selectedItems.size})`}
             </button>
@@ -297,56 +369,55 @@ export function FileBrowser({ config, onLogout }: Props) {
         )}
         
         {processing && (
-          <button onClick={stopProcessing} className="btn-tool" style={{ background: 'var(--error)', color: 'white', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+          <button onClick={stopProcessing} className="btn-text" style={{ color: 'var(--error)', fontSize: '0.9rem' }}>
             <Square size={14} /> 停止
           </button>
         )}
         
         <div style={{ flex: 1 }} />
         
+        {/* 刷新 */}
         <button 
           onClick={() => fetchFiles(currentFolder.id)} 
           disabled={loading} 
-          className="btn-tool"
+          className="btn-icon-sm"
           title="刷新"
-          style={{ padding: '0.5rem' }}
         >
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
 
-      {/* Breadcrumb - 面包屑导航 */}
+      {/* Breadcrumb */}
       <div style={{ 
-        padding: '0.75rem 1.5rem',
-        background: 'var(--bg-base)',
-        borderBottom: '1px solid var(--border)'
+        padding: '0.6rem 1.25rem',
+        background: 'var(--bg-base)'
       }}>
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '1rem' }}>
+        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.9rem' }}>
           <button
             onClick={() => jumpTo(0)}
             style={{
               background: 'none',
               border: 'none',
-              color: currentPath.length === 1 ? 'var(--text-primary)' : 'var(--accent)',
+              color: currentPath.length === 1 ? 'var(--text-primary)' : '#3b82f6',
               fontWeight: currentPath.length === 1 ? 600 : 500,
               cursor: 'pointer',
               padding: '0.25rem 0',
-              marginLeft: '0.5rem'
+              marginLeft: '0.25rem'
             }}
           >
             全部
           </button>
           {currentPath.slice(1).map((p, i) => (
             <div key={p.id} style={{ display: 'flex', alignItems: 'center' }}>
-              <ChevronRight size={14} style={{ color: 'var(--text-muted)', margin: '0 0.25rem' }} />
+              <ChevronRight size={16} style={{ color: 'var(--text-muted)', margin: '0 0.2rem' }} />
               <button
                 onClick={() => jumpTo(i + 1)}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: i + 1 === currentPath.length - 1 ? 'var(--text-primary)' : 'var(--accent)',
+                  color: i + 1 === currentPath.length - 1 ? 'var(--text-primary)' : '#3b82f6',
                   fontWeight: i + 1 === currentPath.length - 1 ? 600 : 500,
-                  cursor: 'pointer',
+                  cursor: i + 1 === currentPath.length - 1 ? 'default' : 'pointer',
                   padding: '0.25rem 0'
                 }}
               >
@@ -362,13 +433,14 @@ export function FileBrowser({ config, onLogout }: Props) {
         {loading ? (
           <div style={{ 
             display: 'flex', 
+            flexDirection: 'column',
             alignItems: 'center', 
             justifyContent: 'center', 
-            height: '200px',
-            color: 'var(--text-muted)'
+            height: '100%',
+            gap: '1rem'
           }}>
-            <RefreshCw size={24} className="animate-spin" style={{ marginRight: '0.5rem' }} />
-            加载中...
+            <div className="loader" />
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>加载中...</span>
           </div>
         ) : files.length === 0 ? (
           <div style={{ 
@@ -383,7 +455,7 @@ export function FileBrowser({ config, onLogout }: Props) {
             <p>此文件夹为空</p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
             {files.map(f => {
               const isSelected = selectedItems.has(f.file_id);
               return (
@@ -391,26 +463,29 @@ export function FileBrowser({ config, onLogout }: Props) {
                   key={f.file_id}
                   onClick={() => f.is_dir ? handleNavigate(f) : null}
                   style={{
-                    padding: '0.875rem 1rem',
+                    padding: '0.75rem 1rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.875rem',
+                    gap: '0.75rem',
                     cursor: f.is_dir ? 'pointer' : 'default',
                     background: isSelected ? 'var(--accent-muted)' : 'var(--bg-surface)',
-                    border: `1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 'var(--radius-md)',
-                    transition: 'all 0.15s ease'
+                    border: `1px solid ${isSelected ? 'var(--accent)' : 'transparent'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    transition: 'all 0.12s ease',
+                    boxShadow: isSelected ? 'none' : 'var(--shadow-sm)'
                   }}
                   onMouseEnter={e => {
                     if (!isSelected) {
                       e.currentTarget.style.background = 'var(--bg-elevated)';
-                      e.currentTarget.style.borderColor = 'var(--border-hover)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
                     }
                   }}
                   onMouseLeave={e => {
                     if (!isSelected) {
                       e.currentTarget.style.background = 'var(--bg-surface)';
-                      e.currentTarget.style.borderColor = 'var(--border)';
+                      e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
+                      e.currentTarget.style.transform = 'translateY(0)';
                     }
                   }}
                 >
@@ -458,7 +533,7 @@ export function FileBrowser({ config, onLogout }: Props) {
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                     <div style={{ 
                       fontWeight: f.is_dir ? 500 : 400,
-                      fontSize: '1rem',
+                      fontSize: '0.9rem',
                       color: 'var(--text-primary)',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
