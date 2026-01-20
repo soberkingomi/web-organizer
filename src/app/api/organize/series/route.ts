@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { CmccClient, DirEntry } from '@/lib/cmcc/client';
 import { TMDBClient } from '@/lib/tmdb/client';
 import { cleanSeriesQuery, extractQualityTags, parseEpisodeFromName, parseSeasonFromText, VIDEO_EXTS, SUB_EXTS, MISC_DIR_NAMES, JUNK_MARKERS } from '@/lib/parsers';
+import pLimit from 'p-limit';
 
 export interface ActionLog {
     type: 'rename' | 'move' | 'mkdir' | 'clean' | 'skip' | 'info';
@@ -153,19 +154,34 @@ async function processSeriesFolder(
     }
 
     // 4. 处理根目录下的视频/字幕文件 (移动到季目录 & 重命名)
+    const limit = pLimit(5); // 并发限制 5
+    const renameTasks: Promise<void>[] = [];
+
+    // 批量移动的映射: parentId -> fileIds[]
+    // 不过这里我们还要重命名，所以顺序很重要
+    // 目前的逻辑是：先移动，后重命名。如果你并发重命名的时候文件还在移动中，会报错。
+    // 但我们的 client.move 是 await 的，且是批量的，所以它是安全的。
+    // 但是我们是一边循环一边 await client.move，这会导致串行。
+    // 应该先收集所有移动操作，批量执行，然后再执行所有的重命名。
+
+    // 第一步：整理所有文件的目标季目录
+    const fileMoves = new Map<string, string[]>(); // targetFolderId -> fileIds[]
+    const fileRenames: { fileId: string, newName: string, desc: string }[] = [];
+
     for (const f of filesToProcess) {
         let { season, episode } = parseEpisodeFromName(f.name);
-        if (season === null) season = 1; // 默认为第 1 季
-        if (episode === null) continue; // 无法识别集号则跳过
+        if (season === null) season = 1; 
+        if (episode === null) continue; 
 
         // 确保季目录存在
         let sid = seasonMap.get(season);
         const sName = `S${season.toString().padStart(2, '0')}`;
         
         if (!sid) {
+            // 这里不能并发创建，必须串行，否则会重复创建同名目录
             if (dryRun) {
                 logs.push({ type: 'mkdir', description: `[DRY] 创建目录 ${sName}` });
-                sid = "dry_run_id";
+                sid = "dry_run_id_" + season; 
             } else {
                 sid = await client.mkdir(folderId, sName);
                 logs.push({ type: 'mkdir', description: `创建目录 ${sName}` });
@@ -173,17 +189,15 @@ async function processSeriesFolder(
             seasonMap.set(season, sid);
         }
 
-        // 移动文件
-        if (f.parent_file_id !== sid && sid !== "dry_run_id") {
-            if (dryRun) {
-                logs.push({ type: 'move', description: `[DRY] 移动 ${f.name} -> ${sName}/` });
-            } else {
-                await client.move([f.file_id], sid);
-                logs.push({ type: 'move', description: `移动 ${f.name} -> ${sName}/` });
-            }
+        // 记录移动操作
+        if (f.parent_file_id !== sid && !sid.startsWith("dry_run_id")) {
+            if (!fileMoves.has(sid)) fileMoves.set(sid, []);
+            fileMoves.get(sid)!.push(f.file_id);
+            if (dryRun) logs.push({ type: 'move', description: `[DRY] 移动 ${f.name} -> ${sName}/` });
+            else logs.push({ type: 'move', description: `移动 ${f.name} -> ${sName}/` });
         }
         
-        // 重命名文件
+        // 计算新文件名
         const ext = f.name.substring(f.name.lastIndexOf('.'));
         const tagStr = extractQualityTags(f.name);
         const newName = tagStr 
@@ -191,31 +205,52 @@ async function processSeriesFolder(
             : `${seriesFilePrefix} - S${season.toString().padStart(2, '0')}E${episode.toString().padStart(2, '0')}${ext}`;
 
         if (f.name !== newName) {
-            if (dryRun) {
-                logs.push({ type: 'rename', description: `[DRY] 重命名: ${f.name} -> ${newName}` });
-            } else {
-                await client.rename(f.file_id, newName);
-                logs.push({ type: 'rename', description: `重命名: ${newName}` });
-            }
+            fileRenames.push({ 
+                fileId: f.file_id, 
+                newName, 
+                desc: `${f.name} -> ${newName}`
+            });
+        }
+    }
+
+    // 执行批量移动 (非 DryRun)
+    if (!dryRun) {
+        for (const [targetId, fileIds] of fileMoves.entries()) {
+            await client.move(fileIds, targetId);
+        }
+    }
+
+    // 执行并发重命名
+    for (const item of fileRenames) {
+        if (dryRun) {
+            logs.push({ type: 'rename', description: `[DRY] 重命名: ${item.desc}` });
+        } else {
+            renameTasks.push(limit(async () => {
+                try {
+                    await client.rename(item.fileId, item.newName);
+                    logs.push({ type: 'rename', description: `重命名: ${item.newName}` });
+                } catch (e: any) {
+                    logs.push({ type: 'info', description: `重命名失败 ${item.newName}: ${e.message}` });
+                }
+            }));
         }
     }
 
     // 5. 递归处理已存在的季文件夹内容
     for (const [s, sid] of seasonMap.entries()) {
-        if (dryRun && sid === "dry_run_id") continue;
+        if (dryRun && sid.startsWith("dry_run_id")) continue;
         
+        // 并发获取所有季文件夹的内容
         const seasonFiles = await client.listDir(sid);
+        
         for (const f of seasonFiles) {
             if (f.is_dir) continue;
-            
             const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
             if (!VIDEO_EXTS.has(ext) && !SUB_EXTS.has(ext)) continue;
             
-            // 只从文件名提取集数，季号以文件夹为准
             const { episode: ep } = parseEpisodeFromName(f.name);
             if (ep === null) continue;
             
-            // 季号直接使用文件夹的季号 s，忽略文件名中的季信息
             const fileExt = f.name.substring(f.name.lastIndexOf('.'));
             const tagStr = extractQualityTags(f.name);
             const newName = tagStr 
@@ -226,12 +261,21 @@ async function processSeriesFolder(
                 if (dryRun) {
                     logs.push({ type: 'rename', description: `[DRY] 重命名 (S${s.toString().padStart(2, '0')}内): ${f.name} -> ${newName}` });
                 } else {
-                    await client.rename(f.file_id, newName);
-                    logs.push({ type: 'rename', description: `重命名 (S${s.toString().padStart(2, '0')}内): ${newName}` });
+                    renameTasks.push(limit(async () => {
+                        try {
+                            await client.rename(f.file_id, newName);
+                            logs.push({ type: 'rename', description: `重命名 (S${s}内): ${newName}` });
+                        } catch (e: any) {
+                            logs.push({ type: 'info', description: `Rename failed in S${s}: ${e.message}` });
+                        }
+                    }));
                 }
             }
         }
     }
+
+    // 等待所有重命名任务完成
+    await Promise.all(renameTasks);
 }
 
 export async function POST(request: Request) {
