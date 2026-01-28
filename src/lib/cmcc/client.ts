@@ -137,15 +137,19 @@ export class CmccClient {
     }
   }
 
-  async listDir(fileId: string): Promise<DirEntry[]> {
+  async listDir(
+    fileId: string,
+    orderBy: 'name' | 'updated_at' = 'name',
+    orderDirection: 'ASC' | 'DESC' = 'ASC'
+  ): Promise<DirEntry[]> {
     let cursor: string | null = null;
     const allItems: DirEntry[] = [];
 
     for (let i = 0; i < 100; i++) {
         const payload = {
           pageInfo: { pageSize: 100, pageCursor: cursor },
-          orderBy: "updated_at",
-          orderDirection: "DESC",
+          orderBy: orderBy,
+          orderDirection: orderDirection,
           parentFileId: fileId,
           imageThumbnailStyleList: ["Small", "Large"]
         };

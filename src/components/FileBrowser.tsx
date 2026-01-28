@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   Folder, FileText, ChevronRight, LogOut, Tv, Film, Trash2, 
-  RefreshCw, X, Terminal, Square, Check, Cloud, Settings, Sun, Moon
+  RefreshCw, X, Terminal, Square, Check, Cloud, Settings, Sun, Moon,
+  ArrowUp, ArrowDown
 } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -32,6 +33,10 @@ export function FileBrowser({ config, onLogout }: Props) {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   
+  // 排序状态
+  const [sortBy, setSortBy] = useState<'name' | 'updated_at'>('name');
+  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
+  
   const [processing, setProcessing] = useState(false);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -43,20 +48,30 @@ export function FileBrowser({ config, onLogout }: Props) {
 
   const currentFolder = currentPath[currentPath.length - 1];
 
+  // 从 localStorage 恢复排序设置
+  useEffect(() => {
+    const savedSortBy = localStorage.getItem('file_sort_by') as 'name' | 'updated_at' | null;
+    const savedSortOrder = localStorage.getItem('file_sort_order') as 'ASC' | 'DESC' | null;
+    
+    if (savedSortBy) setSortBy(savedSortBy);
+    if (savedSortOrder) setSortOrder(savedSortOrder);
+  }, []);
+
   const fetchFiles = async (fileId: string) => {
     setLoading(true);
     try {
       const res = await fetch('/api/cmcc/files', {
         method: 'POST',
-        body: JSON.stringify({ ...config, fileId })
+        body: JSON.stringify({ 
+          ...config, 
+          fileId,
+          orderBy: sortBy,
+          orderDirection: sortOrder
+        })
       });
       const data = await res.json();
       if (data.items) {
-        const sorted = data.items.sort((a: FileItem, b: FileItem) => {
-          if (a.is_dir === b.is_dir) return a.name.localeCompare(b.name);
-          return a.is_dir ? -1 : 1;
-        });
-        setFiles(sorted);
+        setFiles(data.items); // 直接使用 API 返回的排序结果
       }
     } catch (e) {
       console.error(e);
@@ -69,7 +84,7 @@ export function FileBrowser({ config, onLogout }: Props) {
     fetchFiles(currentFolder.id);
     setSelectedItems(new Set());
     setSelectMode(false);
-  }, [currentFolder]);
+  }, [currentFolder, sortBy, sortOrder]); // 添加排序依赖
 
   const handleNavigate = (folder: FileItem) => {
     if (!folder.is_dir) return;
@@ -145,6 +160,17 @@ export function FileBrowser({ config, onLogout }: Props) {
     setProcessing(false);
     abortControllerRef.current = null;
     if (!dryRun) fetchFiles(currentFolder.id);
+  };
+
+  const handleSortChange = (newSortBy: 'name' | 'updated_at') => {
+    setSortBy(newSortBy);
+    localStorage.setItem('file_sort_by', newSortBy);
+  };
+
+  const toggleSortOrder = () => {
+    const newOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
+    setSortOrder(newOrder);
+    localStorage.setItem('file_sort_order', newOrder);
   };
 
   const formatSize = (bytes: number) => {
@@ -318,7 +344,7 @@ export function FileBrowser({ config, onLogout }: Props) {
         padding: '0.6rem 1.25rem', 
         display: 'flex', 
         alignItems: 'center',
-        gap: '0.75rem',
+        gap: '0.5rem',
         borderBottom: '1px solid var(--border)',
         background: 'var(--bg-surface)'
       }}>
@@ -341,7 +367,7 @@ export function FileBrowser({ config, onLogout }: Props) {
         {/* 选择按钮 */}
         {!selectMode && selectedItems.size === 0 ? (
           <button onClick={() => setSelectMode(true)} className="btn-text" style={{ fontSize: '0.9rem' }}>
-            <Check size={16} /> 选择
+            <Check size={16} /> <span className="select-text">选择</span>
           </button>
         ) : (
           <div style={{ display: 'flex', gap: '0.35rem' }}>
@@ -356,14 +382,16 @@ export function FileBrowser({ config, onLogout }: Props) {
               className="btn-text"
               style={{ fontSize: '0.9rem' }}
             >
-              {selectedItems.size === files.length ? "取消全选" : "全选"}
+              <span className="select-text">{selectedItems.size === files.length ? "取消全选" : "全选"}</span>
+              <Check size={16} className="select-icon" />
             </button>
             <button 
               onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
               className="btn-text"
               style={{ color: 'var(--accent)', fontSize: '0.9rem' }}
             >
-              完成 {selectedItems.size > 0 && `(${selectedItems.size})`}
+              <span className="select-text">完成 {selectedItems.size > 0 && `(${selectedItems.size})`}</span>
+              <Check size={16} className="select-icon" style={{ color: 'var(--accent)' }} />
             </button>
           </div>
         )}
@@ -375,6 +403,45 @@ export function FileBrowser({ config, onLogout }: Props) {
         )}
         
         <div style={{ flex: 1 }} />
+        
+        {/* 排序控制 */}
+        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+          <select
+            value={sortBy}
+            onChange={(e) => handleSortChange(e.target.value as any)}
+            style={{
+              padding: '0.4rem 0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              color: 'var(--text-primary)',
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              fontWeight: 500,
+              transition: 'all 0.2s ease',
+              outline: 'none'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'var(--bg-hover)';
+              e.currentTarget.style.borderColor = 'var(--accent)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'var(--bg-elevated)';
+              e.currentTarget.style.borderColor = 'var(--border)';
+            }}
+          >
+            <option value="name">名称</option>
+            <option value="updated_at">修改时间</option>
+          </select>
+          
+          <button
+            onClick={toggleSortOrder}
+            className="btn-icon-sm"
+            title={sortOrder === 'ASC' ? '升序' : '降序'}
+          >
+            {sortOrder === 'ASC' ? <ArrowUp size={16} /> : <ArrowDown size={16} />}
+          </button>
+        </div>
         
         {/* 刷新 */}
         <button 
@@ -631,6 +698,28 @@ export function FileBrowser({ config, onLogout }: Props) {
         }
         .animate-spin {
           animation: spin 1s linear infinite;
+        }
+        
+        /* 移动端响应式样式 */
+        @media (max-width: 640px) {
+          /* 移动端隐藏选择按钮文案 */
+          .select-text {
+            display: none;
+          }
+          /* 移动端显示图标 */
+          .select-icon {
+            display: inline-block;
+          }
+        }
+        
+        /* 桌面端显示文案，隐藏图标 */
+        @media (min-width: 641px) {
+          .select-text {
+            display: inline;
+          }
+          .select-icon {
+            display: none;
+          }
         }
       `}</style>
     </div>
