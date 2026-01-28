@@ -37,6 +37,9 @@ export function FileBrowser({ config, onLogout }: Props) {
   const [sortBy, setSortBy] = useState<'name' | 'updated_at'>('name');
   const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('ASC');
   
+  // 长按选择支持
+  const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
+  
   const [processing, setProcessing] = useState(false);
   const [logs, setLogs] = useState<ActionLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
@@ -95,12 +98,30 @@ export function FileBrowser({ config, onLogout }: Props) {
     setCurrentPath(currentPath.slice(0, index + 1));
   };
 
-  const toggleSelect = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleSelect = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     const newSet = new Set(selectedItems);
     if (newSet.has(id)) newSet.delete(id);
     else newSet.add(id);
     setSelectedItems(newSet);
+  };
+
+  // 长按处理
+  const handleLongPressStart = (fileId: string) => {
+    const timer = setTimeout(() => {
+      setSelectMode(true);
+      const newSet = new Set(selectedItems);
+      newSet.add(fileId);
+      setSelectedItems(newSet);
+    }, 500); // 500ms 触发
+    setLongPressTimer(timer);
+  };
+
+  const handleLongPressEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      setLongPressTimer(null);
+    }
   };
 
   const stopProcessing = () => {
@@ -193,8 +214,8 @@ export function FileBrowser({ config, onLogout }: Props) {
       }}>
         {/* 左侧: Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Cloud size={24} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-          <span style={{ fontWeight: 600, fontSize: '1.1rem', color: 'var(--text-primary)' }}>云盘助手</span>
+          <Cloud size={28} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+          <span style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--text-primary)' }}>云盘助手</span>
         </div>
 
         {/* 右侧: 试运行 + 设置 */}
@@ -364,38 +385,6 @@ export function FileBrowser({ config, onLogout }: Props) {
         {/* 分隔线 */}
         <div style={{ width: '1px', height: '24px', background: 'var(--border)' }} />
         
-        {/* 选择按钮 */}
-        {!selectMode && selectedItems.size === 0 ? (
-          <button onClick={() => setSelectMode(true)} className="btn-text" style={{ fontSize: '0.9rem' }}>
-            <Check size={16} /> <span className="select-text">选择</span>
-          </button>
-        ) : (
-          <div style={{ display: 'flex', gap: '0.35rem' }}>
-            <button 
-              onClick={() => {
-                if (selectedItems.size === files.length) {
-                  setSelectedItems(new Set());
-                } else {
-                  setSelectedItems(new Set(files.map(f => f.file_id)));
-                }
-              }}
-              className="btn-text"
-              style={{ fontSize: '0.9rem' }}
-            >
-              <span className="select-text">{selectedItems.size === files.length ? "取消全选" : "全选"}</span>
-              <Check size={16} className="select-icon" />
-            </button>
-            <button 
-              onClick={() => { setSelectMode(false); setSelectedItems(new Set()); }}
-              className="btn-text"
-              style={{ color: 'var(--accent)', fontSize: '0.9rem' }}
-            >
-              <span className="select-text">完成 {selectedItems.size > 0 && `(${selectedItems.size})`}</span>
-              <Check size={16} className="select-icon" style={{ color: 'var(--accent)' }} />
-            </button>
-          </div>
-        )}
-        
         {processing && (
           <button onClick={stopProcessing} className="btn-text" style={{ color: 'var(--error)', fontSize: '0.9rem' }}>
             <Square size={14} /> 停止
@@ -403,6 +392,17 @@ export function FileBrowser({ config, onLogout }: Props) {
         )}
         
         <div style={{ flex: 1 }} />
+        
+        {/* 选择按钮 - 移到右侧 */}
+        {!selectMode && selectedItems.size === 0 && (
+          <button 
+            onClick={() => setSelectMode(true)} 
+            className="btn-icon-sm" 
+            title="选择"
+          >
+            <Check size={16} />
+          </button>
+        )}
         
         {/* 排序控制 */}
         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
@@ -453,6 +453,61 @@ export function FileBrowser({ config, onLogout }: Props) {
           <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      {/* 选择模式提示条 */}
+      {(selectMode || selectedItems.size > 0) && (
+        <div style={{
+          background: 'var(--accent)',
+          color: 'white',
+          padding: '0.5rem 1.25rem',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '0.85rem',
+          fontWeight: 500
+        }}>
+          <span>已选择 {selectedItems.size} 项</span>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              onClick={() => {
+                if (selectedItems.size === files.length) {
+                  setSelectedItems(new Set());
+                } else {
+                  setSelectedItems(new Set(files.map(f => f.file_id)));
+                }
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                border: 'none',
+                padding: '0.3rem 0.6rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+            >
+              {selectedItems.size === files.length ? '取消全选' : '全选'}
+            </button>
+            <button 
+              onClick={() => {
+                setSelectMode(false);
+                setSelectedItems(new Set());
+              }}
+              style={{
+                background: 'transparent',
+                color: 'white',
+                border: '1px solid rgba(255,255,255,0.4)',
+                padding: '0.3rem 0.6rem',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: '0.8rem',
+                cursor: 'pointer'
+              }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Breadcrumb */}
       <div style={{ 
@@ -528,13 +583,26 @@ export function FileBrowser({ config, onLogout }: Props) {
               return (
                 <div
                   key={f.file_id}
-                  onClick={() => f.is_dir ? handleNavigate(f) : null}
+                  onClick={() => {
+                    if (selectMode || selectedItems.size > 0) {
+                      // 选择模式：点击选中/取消
+                      toggleSelect(f.file_id);
+                    } else {
+                      // 普通模式：点击导航
+                      if (f.is_dir) handleNavigate(f);
+                    }
+                  }}
+                  onTouchStart={() => !(selectMode || selectedItems.size > 0) && handleLongPressStart(f.file_id)}
+                  onTouchEnd={handleLongPressEnd}
+                  onTouchMove={handleLongPressEnd}
+                  onMouseDown={() => !(selectMode || selectedItems.size > 0) && handleLongPressStart(f.file_id)}
+                  onMouseUp={handleLongPressEnd}
                   style={{
                     padding: '0.75rem 1rem',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.75rem',
-                    cursor: f.is_dir ? 'pointer' : 'default',
+                    cursor: 'pointer',
                     background: isSelected ? 'var(--accent-muted)' : 'var(--bg-surface)',
                     border: `1px solid ${isSelected ? 'var(--accent)' : 'transparent'}`,
                     borderRadius: 'var(--radius-sm)',
@@ -549,6 +617,7 @@ export function FileBrowser({ config, onLogout }: Props) {
                     }
                   }}
                   onMouseLeave={e => {
+                    handleLongPressEnd(); // 取消长按
                     if (!isSelected) {
                       e.currentTarget.style.background = 'var(--bg-surface)';
                       e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
