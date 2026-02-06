@@ -166,43 +166,68 @@ export function extractMovieInfo(rawName: string): {
   return { title: normalizeSpaces(title), year };
 }
 
-export function parseEpisodeFromName(name: string): {
+export function parseEpisodeFromName(
+  name: string,
+  inSeasonFolder: boolean = false
+): {
   season: number | null;
   episode: number | null;
 } {
-  const stem = name.replace(/\.[^/.]+$/, ""); // remove extension
-
-  // SxxEyy
-  const m1 = stem.match(/S(\d{1,2})\s*E(\d{1,3})/i);
-  if (m1) return { season: parseInt(m1[1]), episode: parseInt(m1[2]) };
-
-  // Chinese "第x集"
-  const m2 = stem.match(/第\s*(\d{1,4})\s*[集话回]/);
-  if (m2) return { season: null, episode: parseInt(m2[1]) };
-
-  // EPxx
-  const m3 = stem.match(EP_NUM_RE);
-  if (m3) return { season: null, episode: parseInt(m3[1]) };
-
-  // [Prefix] 01 Title (处理类似 "【公众号：阿白随手盘】 03 大小药丸" 的格式)
-  // 匹配开头（忽略括号内容）后的 1-3 位数字，且数字后必须跟空格
-  // 使用 \d{1,3} 可以避免误匹配 4 位年份（如 2024）
-  const mHead = stem.match(/^(?:[[【(].*?[\]】)]\s*)*(\d{1,3})(?=\s)/);
-  if (mHead) return { season: null, episode: parseInt(mHead[1]) };
-
-  // -01, _01, .01, 【xx】name-01 等格式
-  const m4 = stem.match(/[-_.](\d{1,3})$/);
-  if (m4) return { season: null, episode: parseInt(m4[1]) };
-
-  // 文件名末尾的数字，如 "xxx 01" 或 "xxx01"
-  const m5 = stem.match(/[\s\-_](\d{1,3})$/);
-  if (m5) return { season: null, episode: parseInt(m5[1]) };
-
-  // Just digits (纯数字文件名)
-  if (/^\d{1,3}$/.test(stem.trim())) {
-    return { season: null, episode: parseInt(stem) };
+  const stem = name.replace(/\.[^/.]+$/, ""); // 移除扩展名
+  
+  // === 在季文件夹内的简化逻辑 ===
+  if (inSeasonFolder) {
+    // 1. SxxEyy 格式（保留，有些文件可能带季信息）
+    const mSE = stem.match(/S(\d{1,2})\s*E(\d{1,3})/i);
+    if (mSE) return { season: parseInt(mSE[1]), episode: parseInt(mSE[2]) };
+    
+    // 2. EPxx 格式
+    const mEP = stem.match(EP_NUM_RE);
+    if (mEP) return { season: null, episode: parseInt(mEP[1]) };
+    
+    // 3. 第x集/话/回
+    const mChinese = stem.match(/第\s*(\d{1,4})\s*[集话回]/);
+    if (mChinese) return { season: null, episode: parseInt(mChinese[1]) };
+    
+    // 4. 兜底：提取文件名中的第一个数字（1-3位，避免误匹配年份/分辨率）
+    const anyNum = stem.match(/(\d{1,3})/);
+    if (anyNum) return { season: null, episode: parseInt(anyNum[1]) };
+    
+    return { season: null, episode: null };
   }
-
+  
+  // === 根目录/未知上下文的完整逻辑 ===
+  
+  // 1. SxxEyy 格式（优先）
+  const mSE = stem.match(/S(\d{1,2})\s*E(\d{1,3})/i);
+  if (mSE) return { season: parseInt(mSE[1]), episode: parseInt(mSE[2]) };
+  
+  // 2. 第x集/话/回（视为第1季）
+  const mChinese = stem.match(/第\s*(\d{1,4})\s*[集话回]/);
+  if (mChinese) return { season: null, episode: parseInt(mChinese[1]) };
+  
+  // 3. EPxx 格式
+  const mEP = stem.match(EP_NUM_RE);
+  if (mEP) return { season: null, episode: parseInt(mEP[1]) };
+  
+  // 4. [前缀] 数字
+  const mHead = stem.match(/^(?:[[\【(].*?[\]】)]\s*)*(\d{1,3})(?=\s)/);
+  if (mHead) return { season: null, episode: parseInt(mHead[1]) };
+  
+  // 5. -01, _01 等
+  const mSep = stem.match(/[-_.](\d{1,3})$/);
+  if (mSep) return { season: null, episode: parseInt(mSep[1]) };
+  
+  // 6. 空格+数字
+  const mSpace = stem.match(/\s(\d{1,3})$/);
+  if (mSpace) return { season: null, episode: parseInt(mSpace[1]) };
+  
+  // 7. 纯数字（最后尝试）
+  const pureNum = stem.trim();
+  if (/^\d{1,3}$/.test(pureNum)) {
+    return { season: null, episode: parseInt(pureNum) };
+  }
+  
   return { season: null, episode: null };
 }
 

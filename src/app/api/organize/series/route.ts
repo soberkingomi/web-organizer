@@ -248,7 +248,7 @@ async function processSeriesFolder(
             const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
             if (!VIDEO_EXTS.has(ext) && !SUB_EXTS.has(ext)) continue;
             
-            const { episode: ep } = parseEpisodeFromName(f.name);
+            const { episode: ep } = parseEpisodeFromName(f.name, true); // 季文件夹内，使用简化逻辑
             if (ep === null) continue;
             
             const fileExt = f.name.substring(f.name.lastIndexOf('.'));
