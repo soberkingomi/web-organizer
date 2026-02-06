@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 
 export async function POST(request: Request) {
   try {
@@ -14,35 +12,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // 查找配置文件路径
-    const configPath = process.env.CONFIG_PATH;
-    const candidates = [
-      configPath,
-      path.join(process.cwd(), 'config/cmcc_config.json'),
-      path.join(process.cwd(), 'cmcc_config.json'),
-      'd:\\CodeBarn\\Handful-Scripting\\emby-tools\\cmcc_config.json',
-      path.join(process.cwd(), '../emby-tools/cmcc_config.json'),
-    ].filter(Boolean) as string[];
+    // 检查环境变量
+    const gistId = process.env.GIST_ID;
+    const githubToken = process.env.GITHUB_TOKEN;
 
-    let targetPath: string | null = null;
-    let existingConfig: any = {};
-
-    // 寻找现有配置文件
-    for (const p of candidates) {
-      if (fs.existsSync(p)) {
-        targetPath = p;
-        const content = fs.readFileSync(p, 'utf-8');
-        existingConfig = JSON.parse(content);
-        break;
-      }
+    if (!gistId || !githubToken) {
+      return NextResponse.json(
+        { error: '未配置 GIST_ID 或 GITHUB_TOKEN 环境变量' },
+        { status: 500 }
+      );
     }
 
-    // 如果没找到，使用默认路径
-    if (!targetPath) {
-      targetPath = path.join(process.cwd(), 'config/cmcc_config.json');
+    // 1. 读取现有配置
+    const gistUrl = `https://api.github.com/gists/${gistId}`;
+    const getResponse = await fetch(gistUrl, {
+      headers: {
+        'Authorization': `token ${githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+
+    if (!getResponse.ok) {
+      return NextResponse.json(
+        { error: `读取 Gist 失败: ${getResponse.statusText}` },
+        { status: getResponse.status }
+      );
     }
 
-    // 更新配置
+    const gistData = await getResponse.json();
+    const configFile = gistData.files['cmcc_config.json'];
+    const existingConfig = configFile ? JSON.parse(configFile.content) : {};
+
+    // 2. 合并配置
     const updatedConfig = {
       ...existingConfig,
       ...(authorization !== undefined && { authorization }),
@@ -52,18 +53,34 @@ export async function POST(request: Request) {
       ...(headers !== undefined && { headers }),
     };
 
-    // 写入文件
-    const dir = path.dirname(targetPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    // 3. 更新 Gist
+    const updateResponse = await fetch(gistUrl, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `token ${githubToken}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        files: {
+          'cmcc_config.json': {
+            content: JSON.stringify(updatedConfig, null, 2)
+          }
+        }
+      })
+    });
+
+    if (!updateResponse.ok) {
+      return NextResponse.json(
+        { error: `更新 Gist 失败: ${updateResponse.statusText}` },
+        { status: updateResponse.status }
+      );
     }
-    
-    fs.writeFileSync(targetPath, JSON.stringify(updatedConfig, null, 2), 'utf-8');
 
     return NextResponse.json({
       success: true,
-      message: '配置已更新',
-      path: targetPath,
+      message: '配置已更新到 GitHub Gist',
+      gist_id: gistId,
       config: updatedConfig
     });
 
@@ -74,3 +91,4 @@ export async function POST(request: Request) {
     );
   }
 }
+

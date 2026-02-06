@@ -4,14 +4,40 @@ import path from 'path';
 
 export async function GET() {
   try {
-    // 方式1: 完整 JSON 配置（推荐用于 Vercel）
-    // 设置环境变量 CMCC_CONFIG = '{"authorization":"Bearer xxx","cookie":"xxx","tmdb_key":"xxx"}'
+    // 优先级1: GitHub Gist（适用于 Vercel）
+    const gistId = process.env.GIST_ID;
+    const githubToken = process.env.GITHUB_TOKEN;
+
+    if (gistId && githubToken) {
+      try {
+        const gistUrl = `https://api.github.com/gists/${gistId}`;
+        const response = await fetch(gistUrl, {
+          headers: {
+            'Authorization': `token ${githubToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+          },
+          next: { revalidate: 0 } // 不缓存，确保实时性
+        });
+
+        if (response.ok) {
+          const gistData = await response.json();
+          const configFile = gistData.files['cmcc_config.json'];
+          if (configFile) {
+            return NextResponse.json(JSON.parse(configFile.content));
+          }
+        }
+      } catch (gistError) {
+        console.error('从 Gist 读取失败，降级到其他方式:', gistError);
+      }
+    }
+
+    // 优先级2: 完整 JSON 配置（环境变量）
     if (process.env.CMCC_CONFIG) {
       const config = JSON.parse(process.env.CMCC_CONFIG);
       return NextResponse.json(config);
     }
 
-    // 方式2: 分开的环境变量
+    // 优先级3: 分开的环境变量
     if (process.env.CMCC_AUTH && process.env.CMCC_COOKIE) {
       return NextResponse.json({
         authorization: process.env.CMCC_AUTH,
@@ -21,7 +47,7 @@ export async function GET() {
       });
     }
 
-    // 方式3: 本地/Docker 从文件读取
+    // 优先级4: 本地文件（开发环境）
     const configPath = process.env.CONFIG_PATH;
     const candidates = [
         configPath,
@@ -42,7 +68,7 @@ export async function GET() {
 
     if (!config) {
         return NextResponse.json({ 
-          error: '配置未找到。请设置环境变量 CMCC_CONFIG 或提供配置文件。' 
+          error: '配置未找到。请设置 GIST_ID + GITHUB_TOKEN 或 CMCC_CONFIG 环境变量。' 
         }, { status: 404 });
     }
 
